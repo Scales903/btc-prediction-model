@@ -33,28 +33,5 @@ export async function GET() {
     });
   }
 }
-```
 
-**Save (Ctrl + S)**
 
----
-
-## 🎉 ALL FILES CREATED!
-
-You now have all 14 files! Your structure should look like:
-```
-BTC-PREDICTION-MODEL
-├── app/
-│   ├── api/
-│   │   └── btc-price/
-│   │       └── route.ts ✅
-│   ├── globals.css ✅
-│   ├── layout.tsx ✅
-│   └── page.tsx ✅
-├── .gitignore ✅
-├── next.config.js ✅
-├── package.json ✅
-├── postcss.config.js ✅
-├── tailwind.config.js ✅
-├── tsconfig.json ✅
-└── vercel.json ✅
