@@ -393,6 +393,13 @@ export default function BTCPredictionModel() {
   // Backtest data
   const [backtestData, setBacktestData] = useState<any>(null);
   const [isLoadingBacktest, setIsLoadingBacktest] = useState(false);
+  // Position sizing
+  const [portfolioSize, setPortfolioSize] = useState(100000);
+  const [riskPerTrade, setRiskPerTrade] = useState(2);
+  const [stopLoss, setStopLoss] = useState(5);
+  const [takeProfit, setTakeProfit] = useState(15);
+  const [winRate, setWinRate] = useState(55);
+  const [leverage, setLeverage] = useState(1);
   // Auto-refresh
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(60);
@@ -890,6 +897,7 @@ ${'='.repeat(60)}`;
             { key: 'macro', label: 'Macro Dashboard' },
             { key: 'options', label: 'Options Flow' },
             { key: 'backtest', label: 'Backtesting' },
+            { key: 'position', label: 'Position Sizing' },
           ].map(t => (
             <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === 'multiScenario') setShowMultiScenario(true); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
@@ -2124,6 +2132,218 @@ ${'='.repeat(60)}`;
             )}
           </div>
         )}
+        {/* TAB: POSITION SIZING */}
+        {activeTab === 'position' && (() => {
+          const riskAmount = portfolioSize * (riskPerTrade / 100);
+          const positionSize = stopLoss > 0 ? riskAmount / (stopLoss / 100) : 0;
+          const btcAmount = currentPrice > 0 ? positionSize / currentPrice : 0;
+          const leveragedPosition = positionSize * leverage;
+          const leveragedBtc = btcAmount * leverage;
+          const maxLoss = riskAmount * leverage;
+          const maxGain = positionSize * (takeProfit / 100) * leverage;
+          const riskReward = stopLoss > 0 ? takeProfit / stopLoss : 0;
+
+          // Kelly Criterion
+          const wr = winRate / 100;
+          const kellyFraction = wr > 0 && riskReward > 0 ? (wr * (riskReward + 1) - 1) / riskReward : 0;
+          const kellyPercent = Math.max(0, Math.round(kellyFraction * 10000) / 100);
+          const halfKelly = Math.round(kellyPercent / 2 * 100) / 100;
+          const kellyPosition = portfolioSize * (halfKelly / 100) / (stopLoss / 100);
+
+          // Expected value per trade
+          const evPerTrade = (wr * takeProfit) - ((1 - wr) * stopLoss);
+          const evDollar = positionSize * (evPerTrade / 100);
+
+          // Drawdown estimates
+          const consecutiveLosses5 = riskAmount * 5 * leverage;
+          const consecutiveLosses10 = riskAmount * 10 * leverage;
+          const ruinRisk = stopLoss > 0 ? Math.pow(1 - wr, Math.floor(portfolioSize / maxLoss)) : 1;
+
+          // Backtest-informed win rate
+          const backtestWinRate = backtestData?.summary?.overallWinRate || null;
+
+          // Signal-based recommendation
+          let signalBias = 'neutral';
+          let confidenceMultiplier = 1.0;
+          if (liveData) {
+            const rsiVal = liveData.rsi || 50;
+            if (rsiVal < 35) { signalBias = 'bullish'; confidenceMultiplier = 1.2; }
+            else if (rsiVal > 65) { signalBias = 'bearish'; confidenceMultiplier = 0.8; }
+          }
+
+          return (
+            <div className="space-y-6">
+              {/* Calculator */}
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-5">
+                <h2 className="text-lg font-bold text-white">Position Sizing Calculator</h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Inputs */}
+                  <div className="space-y-4">
+                    <SliderControl label="Portfolio Size ($)" value={portfolioSize} min={1000} max={1000000} step={1000}
+                      display={`$${portfolioSize.toLocaleString()}`} onChange={(v: number) => setPortfolioSize(v)} />
+                    <SliderControl label="Risk Per Trade (%)" value={riskPerTrade} min={0.5} max={10} step={0.5}
+                      display={`${riskPerTrade}%`} onChange={(v: number) => setRiskPerTrade(v)} />
+                    <SliderControl label="Stop Loss (%)" value={stopLoss} min={1} max={25} step={0.5}
+                      display={`${stopLoss}%`} onChange={(v: number) => setStopLoss(v)} />
+                    <SliderControl label="Take Profit (%)" value={takeProfit} min={1} max={100} step={1}
+                      display={`${takeProfit}%`} onChange={(v: number) => setTakeProfit(v)} />
+                    <SliderControl label="Win Rate (%)" value={winRate} min={20} max={80} step={1}
+                      display={`${winRate}%`} onChange={(v: number) => setWinRate(v)} />
+                    <SliderControl label="Leverage" value={leverage} min={1} max={10} step={1}
+                      display={`${leverage}x`} onChange={(v: number) => setLeverage(v)} />
+
+                    {backtestWinRate && (
+                      <button onClick={() => setWinRate(Math.round(backtestWinRate))}
+                        className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-blue-900/30 border border-blue-700/50 text-blue-300 hover:bg-blue-900/50 transition-colors">
+                        Use Backtest Win Rate ({backtestWinRate}%)
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Results */}
+                  <div className="space-y-3">
+                    <div className="bg-gray-800 rounded-lg p-4">
+                      <div className="text-xs text-gray-500 mb-1">Recommended Position Size</div>
+                      <div className="text-3xl font-bold text-orange-400">${Math.round(positionSize).toLocaleString()}</div>
+                      <div className="text-sm text-gray-400 mt-1">{btcAmount.toFixed(4)} BTC at ${currentPrice.toLocaleString()}</div>
+                      {leverage > 1 && (
+                        <div className="text-sm text-yellow-400 mt-1">
+                          Leveraged: ${Math.round(leveragedPosition).toLocaleString()} ({leveragedBtc.toFixed(4)} BTC at {leverage}x)
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-gray-800 rounded-lg p-3">
+                        <div className="text-xs text-gray-500">Max Loss</div>
+                        <div className="text-xl font-bold text-red-400">-${Math.round(maxLoss).toLocaleString()}</div>
+                        <div className="text-xs text-gray-500">{riskPerTrade * leverage}% of portfolio</div>
+                      </div>
+                      <div className="bg-gray-800 rounded-lg p-3">
+                        <div className="text-xs text-gray-500">Max Gain</div>
+                        <div className="text-xl font-bold text-green-400">+${Math.round(maxGain).toLocaleString()}</div>
+                        <div className="text-xs text-gray-500">{(takeProfit / stopLoss * riskPerTrade * leverage).toFixed(1)}% of portfolio</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="text-xs text-gray-500">Risk/Reward Ratio</div>
+                      <div className={`text-2xl font-bold ${riskReward >= 3 ? 'text-green-400' : riskReward >= 2 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        1:{riskReward.toFixed(1)}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {riskReward >= 3 ? 'Excellent — professional standard' : riskReward >= 2 ? 'Good — acceptable for high win rate' : 'Poor — increase TP or tighten SL'}
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="text-xs text-gray-500">Expected Value Per Trade</div>
+                      <div className={`text-2xl font-bold ${evPerTrade > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {evPerTrade > 0 ? '+' : ''}{evPerTrade.toFixed(2)}%
+                      </div>
+                      <div className={`text-xs mt-1 ${evDollar > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        ${Math.abs(Math.round(evDollar)).toLocaleString()} per trade {evDollar > 0 ? 'expected profit' : 'expected loss'}
+                      </div>
+                      {evPerTrade <= 0 && <div className="text-xs text-red-400 mt-1">Negative EV — this setup loses money over time. Adjust parameters.</div>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kelly Criterion */}
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                <h3 className="text-md font-bold text-white">Kelly Criterion</h3>
+                <p className="text-xs text-gray-500">The Kelly formula calculates the mathematically optimal bet size to maximize long-term growth. Half-Kelly is recommended for crypto due to fat-tailed volatility.</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-800 rounded-lg p-4 text-center">
+                    <div className="text-xs text-gray-500">Full Kelly</div>
+                    <div className={`text-3xl font-bold ${kellyPercent > 0 ? 'text-blue-400' : 'text-red-400'}`}>{kellyPercent}%</div>
+                    <div className="text-xs text-gray-500 mt-1">of portfolio per trade</div>
+                    {kellyPercent <= 0 && <div className="text-xs text-red-400 mt-1">Negative Kelly — do not trade this setup</div>}
+                  </div>
+                  <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4 text-center">
+                    <div className="text-xs text-green-400">Half-Kelly (Recommended)</div>
+                    <div className="text-3xl font-bold text-green-400">{halfKelly}%</div>
+                    <div className="text-xs text-gray-400 mt-1">${Math.round(portfolioSize * halfKelly / 100).toLocaleString()} risk per trade</div>
+                    <div className="text-xs text-gray-500 mt-1">Position: ${Math.round(kellyPosition).toLocaleString()}</div>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-4 text-center">
+                    <div className="text-xs text-gray-500">Kelly Formula</div>
+                    <div className="text-sm font-mono text-gray-300 mt-2">f* = (W × (R+1) - 1) / R</div>
+                    <div className="text-xs text-gray-500 mt-2">W = {wr.toFixed(2)} | R = {riskReward.toFixed(1)}</div>
+                    <div className="text-xs text-gray-500">f* = {kellyFraction.toFixed(4)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Risk Management */}
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                <h3 className="text-md font-bold text-white">Risk Scenarios</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="text-sm text-gray-400 mb-2">5 Consecutive Losses</div>
+                    <div className="text-2xl font-bold text-red-400">-${Math.round(consecutiveLosses5).toLocaleString()}</div>
+                    <div className="text-xs text-gray-500 mt-1">{((consecutiveLosses5 / portfolioSize) * 100).toFixed(1)}% drawdown</div>
+                    <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden mt-2">
+                      <div className="h-full rounded-full bg-red-500" style={{ width: `${Math.min(100, (consecutiveLosses5 / portfolioSize) * 100)}%` }} />
+                    </div>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="text-sm text-gray-400 mb-2">10 Consecutive Losses</div>
+                    <div className="text-2xl font-bold text-red-400">-${Math.round(consecutiveLosses10).toLocaleString()}</div>
+                    <div className="text-xs text-gray-500 mt-1">{((consecutiveLosses10 / portfolioSize) * 100).toFixed(1)}% drawdown</div>
+                    <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden mt-2">
+                      <div className="h-full rounded-full bg-red-500" style={{ width: `${Math.min(100, (consecutiveLosses10 / portfolioSize) * 100)}%` }} />
+                    </div>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="text-sm text-gray-400 mb-2">Trades Before Ruin</div>
+                    <div className="text-2xl font-bold text-blue-400">{maxLoss > 0 ? Math.floor(portfolioSize / maxLoss) : '∞'}</div>
+                    <div className="text-xs text-gray-500 mt-1">consecutive losses to reach $0</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Reference */}
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                <h3 className="text-md font-bold text-white">Position Size Quick Reference</h3>
+                <p className="text-xs text-gray-500">Common setups at current portfolio size and BTC price.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {[
+                    { label: 'Conservative', risk: 1, sl: 3, tp: 9, lev: 1 },
+                    { label: 'Moderate', risk: 2, sl: 5, tp: 15, lev: 1 },
+                    { label: 'Aggressive', risk: 3, sl: 7, tp: 21, lev: 2 },
+                    { label: 'Scalp', risk: 1, sl: 1.5, tp: 3, lev: 3 },
+                  ].map((preset, i) => {
+                    const presetRisk = portfolioSize * (preset.risk / 100);
+                    const presetPos = presetRisk / (preset.sl / 100);
+                    const presetBtc = presetPos / currentPrice;
+                    const presetEV = (wr * preset.tp) - ((1 - wr) * preset.sl);
+                    return (
+                      <div key={i} className="bg-gray-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-gray-750 transition-colors"
+                        onClick={() => { setRiskPerTrade(preset.risk); setStopLoss(preset.sl); setTakeProfit(preset.tp); setLeverage(preset.lev); }}>
+                        <div>
+                          <div className="text-sm font-medium text-gray-200">{preset.label}</div>
+                          <div className="text-xs text-gray-500">{preset.risk}% risk | {preset.sl}% SL | {preset.tp}% TP | {preset.lev}x</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-bold text-orange-400">${Math.round(presetPos).toLocaleString()}</div>
+                          <div className="text-xs text-gray-500">{presetBtc.toFixed(4)} BTC</div>
+                          <div className={`text-xs ${presetEV > 0 ? 'text-green-400' : 'text-red-400'}`}>EV: {presetEV > 0 ? '+' : ''}{presetEV.toFixed(1)}%</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-4 text-xs text-yellow-300/70">
+                <strong>Risk Warning:</strong> Position sizing calculations are mathematical tools, not trading advice. Cryptocurrency is extremely volatile. Never risk more than you can afford to lose. The Kelly Criterion assumes known probabilities — in practice, crypto win rates are unstable.
+              </div>
+            </div>
+          );
+        })()}
         {/* DISCLAIMER */}
         <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-4 text-xs text-yellow-300/70">
           <strong>Disclaimer:</strong> This model uses geometric Brownian motion with Monte Carlo simulation.
