@@ -100,7 +100,47 @@ function gaussianRandom() {
   while (v === 0) v = Math.random();
   return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
 }
+// ════
+// SUB-COMPONENTS
+// ════
 
+function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 flex items-center gap-3">
+      {icon}
+      <div>
+        <div className="text-xs text-gray-500">{label}</div>
+        <div className="text-lg font-bold text-gray-100">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function SignalCard({ label, value, signal }: { label: string; value: string; signal?: string }) {
+  return (
+    <div className="bg-gray-800 rounded-lg p-3">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="font-bold text-gray-100">{value}</div>
+      {signal && <div className="text-xs font-medium text-blue-400 mt-0.5">{signal}</div>}
+    </div>
+  );
+}
+
+function SliderControl({ label, value, min, max, step, display, onChange }: {
+  label: string; value: number; min: number; max: number; step: number; display: string; onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-1">
+        <span className="text-gray-400">{label}</span>
+        <span className="font-semibold text-gray-200">{display}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-orange-500" />
+    </div>
+  );
+}
 // ════
 // MAIN COMPONENT
 // ════
@@ -131,6 +171,9 @@ export default function BTCPredictionModel() {
   // On-chain data
   const [onchainData, setOnchainData] = useState<any>(null);
   const [isLoadingOnchain, setIsLoadingOnchain] = useState(false);
+  // Macro data
+  const [macroData, setMacroData] = useState<any>(null);
+  const [isLoadingMacro, setIsLoadingMacro] = useState(false);
   // ── FETCH LIVE PRICE ────────────────────────────────────────────────────
 
   const fetchLivePrice = async () => {
@@ -197,6 +240,24 @@ export default function BTCPredictionModel() {
 
   useEffect(() => {
     fetchOnchainData();
+  }, []);
+    // ── FETCH MACRO DATA ────────────────────────────────────────────────────
+
+  const fetchMacroData = async () => {
+    setIsLoadingMacro(true);
+    try {
+      const response = await fetch('/api/macro');
+      const data = await response.json();
+      if (!data.error) setMacroData(data);
+    } catch (err) {
+      console.error('Macro fetch error:', err);
+    } finally {
+      setIsLoadingMacro(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMacroData();
   }, []);
 
   // ── PROJECTION ENGINE (Monte Carlo / GBM) ──────────────────────────────
@@ -510,6 +571,7 @@ ${'='.repeat(60)}`;
             { key: 'accuracy', label: 'Model Accuracy' },
             { key: 'onchain', label: 'On-Chain Metrics' },
             { key: 'halving', label: 'Halving Cycle' },
+            { key: 'macro', label: 'Macro Dashboard' },
           ].map(t => (
             <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === 'multiScenario') setShowMultiScenario(true); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
@@ -1098,6 +1160,246 @@ ${'='.repeat(60)}`;
               </>
             )}
           </div>
+        )}{/* TAB: MACRO CORRELATION DASHBOARD */}
+        {activeTab === 'macro' && (
+          <div className="space-y-6">
+            {!macroData ? (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-10 text-center">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-500">Loading macro data...</p>
+              </div>
+            ) : (
+              <>
+                {/* Macro Bias */}
+                <div className={`rounded-xl border p-5 ${
+                  macroData.macroAnalysis.bias === 'Bullish' ? 'bg-green-900/20 border-green-700/50' :
+                  macroData.macroAnalysis.bias === 'Bearish' ? 'bg-red-900/20 border-red-700/50' :
+                  'bg-yellow-900/20 border-yellow-700/50'
+                }`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-white">Macro Environment for BTC</h2>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-2xl font-bold ${
+                        macroData.macroAnalysis.bias === 'Bullish' ? 'text-green-400' :
+                        macroData.macroAnalysis.bias === 'Bearish' ? 'text-red-400' : 'text-yellow-400'
+                      }`}>{macroData.macroAnalysis.bias}</span>
+                      <span className="text-sm text-gray-400">Score: {macroData.macroAnalysis.score}/100</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {macroData.macroAnalysis.signals.map((s: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                        <span className={`mt-0.5 ${s.includes('bullish') || s.includes('supports') || s.includes('favor') ? 'text-green-500' : s.includes('headwind') || s.includes('pressure') || s.includes('hurts') || s.includes('increases') ? 'text-red-500' : 'text-yellow-500'}`}>•</span>
+                        <span>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Current Regime */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-md font-bold text-white">Current Macro Regime</h3>
+                    <button onClick={fetchMacroData} disabled={isLoadingMacro}
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700">
+                      {isLoadingMacro ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Refresh
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div className="bg-gray-800 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-500">DXY</div>
+                      <div className="text-xl font-bold text-gray-200">{macroData.current.dxy}</div>
+                      <div className={`text-xs font-medium mt-1 ${macroData.regimes.dxyTrend === 'Weakening' ? 'text-green-400' : 'text-red-400'}`}>
+                        {macroData.regimes.dxyTrend}
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-500">Fed Rate</div>
+                      <div className="text-xl font-bold text-gray-200">{macroData.current.fed}%</div>
+                      <div className={`text-xs font-medium mt-1 ${macroData.regimes.fedPolicy === 'Easing' ? 'text-green-400' : macroData.regimes.fedPolicy === 'Tightening' ? 'text-red-400' : 'text-yellow-400'}`}>
+                        {macroData.regimes.fedPolicy}
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-500">M2 Supply</div>
+                      <div className="text-xl font-bold text-gray-200">${macroData.current.m2}T</div>
+                      <div className={`text-xs font-medium mt-1 ${macroData.regimes.m2Trend === 'Expanding' ? 'text-green-400' : 'text-red-400'}`}>
+                        {macroData.regimes.m2Trend}
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-500">US 10Y Yield</div>
+                      <div className="text-xl font-bold text-gray-200">{macroData.current.us10y}%</div>
+                      <div className={`text-xs font-medium mt-1 ${macroData.regimes.yieldTrend === 'Falling' ? 'text-green-400' : 'text-red-400'}`}>
+                        {macroData.regimes.yieldTrend}
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-500">S&P 500</div>
+                      <div className="text-xl font-bold text-gray-200">{macroData.current.sp500.toLocaleString()}</div>
+                      <div className={`text-xs font-medium mt-1 ${macroData.regimes.riskAppetite === 'Risk-On' ? 'text-green-400' : 'text-red-400'}`}>
+                        {macroData.regimes.riskAppetite}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Normalized Performance Overlay */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">Normalized Performance (Base 100)</h3>
+                  <p className="text-xs text-gray-500">All assets indexed to 100 at start of period. Shows relative performance over time.</p>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={macroData.normalized}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={2} />
+                      <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
+                        formatter={(v: any) => `${Number(v).toFixed(1)}`} />
+                      <Legend />
+                      <Line type="monotone" dataKey="btc" stroke="#f97316" strokeWidth={2.5} dot={false} name="BTC" />
+                      <Line type="monotone" dataKey="sp500" stroke="#3b82f6" strokeWidth={1.5} dot={false} name="S&P 500" />
+                      <Line type="monotone" dataKey="gold" stroke="#facc15" strokeWidth={1.5} dot={false} name="Gold" />
+                      <Line type="monotone" dataKey="dxy" stroke="#ef4444" strokeWidth={1.5} dot={false} name="DXY" />
+                      <Line type="monotone" dataKey="m2" stroke="#10b981" strokeWidth={1.5} dot={false} name="M2 Supply" />
+                      <ReferenceLine y={100} stroke="#6b7280" strokeDasharray="3 3" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Correlation Matrix */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">BTC Correlation Matrix</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-gray-400 mb-3">Price-Level Correlations (Full Period)</div>
+                      <div className="space-y-2">
+                        {[
+                          { label: 'BTC vs S&P 500', value: macroData.correlations.priceLevel.btc_sp500, note: 'Risk asset correlation' },
+                          { label: 'BTC vs DXY', value: macroData.correlations.priceLevel.btc_dxy, note: 'Dollar strength impact' },
+                          { label: 'BTC vs M2 Supply', value: macroData.correlations.priceLevel.btc_m2, note: 'Liquidity relationship' },
+                          { label: 'BTC vs Gold', value: macroData.correlations.priceLevel.btc_gold, note: 'Store of value comparison' },
+                          { label: 'BTC vs 10Y Yield', value: macroData.correlations.priceLevel.btc_us10y, note: 'Rate sensitivity' },
+                        ].map((c, i) => (
+                          <div key={i} className="bg-gray-800 rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm text-gray-300">{c.label}</span>
+                              <span className={`text-lg font-bold ${
+                                Math.abs(c.value) > 0.7 ? (c.value > 0 ? 'text-green-400' : 'text-red-400') :
+                                Math.abs(c.value) > 0.4 ? 'text-yellow-400' : 'text-gray-400'
+                              }`}>{c.value > 0 ? '+' : ''}{c.value}</span>
+                            </div>
+                            <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${c.value > 0 ? 'bg-green-500' : 'bg-red-500'}`}
+                                style={{ width: `${Math.abs(c.value) * 100}%`, marginLeft: c.value < 0 ? `${(1 - Math.abs(c.value)) * 100}%` : '0' }} />
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">{c.note}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-400 mb-3">Return-Based Correlations (Month-over-Month)</div>
+                      <div className="space-y-2">
+                        {[
+                          { label: 'BTC vs S&P 500', value: macroData.correlations.returns.btc_sp500, interpretation: '' },
+                          { label: 'BTC vs DXY', value: macroData.correlations.returns.btc_dxy, interpretation: '' },
+                          { label: 'BTC vs M2 Supply', value: macroData.correlations.returns.btc_m2, interpretation: '' },
+                          { label: 'BTC vs Gold', value: macroData.correlations.returns.btc_gold, interpretation: '' },
+                        ].map((c, i) => {
+                          const interp = Math.abs(c.value) > 0.7 ? 'Strong' : Math.abs(c.value) > 0.4 ? 'Moderate' : Math.abs(c.value) > 0.2 ? 'Weak' : 'Negligible';
+                          const dir = c.value > 0 ? 'positive' : 'negative';
+                          return (
+                            <div key={i} className="bg-gray-800 rounded-lg p-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm text-gray-300">{c.label}</span>
+                                <span className={`text-lg font-bold ${
+                                  Math.abs(c.value) > 0.7 ? (c.value > 0 ? 'text-green-400' : 'text-red-400') :
+                                  Math.abs(c.value) > 0.4 ? 'text-yellow-400' : 'text-gray-400'
+                                }`}>{c.value > 0 ? '+' : ''}{c.value}</span>
+                              </div>
+                              <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${c.value > 0 ? 'bg-green-500' : 'bg-red-500'}`}
+                                  style={{ width: `${Math.abs(c.value) * 100}%` }} />
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">{interp} {dir} correlation</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="bg-gray-800 rounded-lg p-3 mt-3">
+                        <div className="text-xs text-gray-500">Interpretation Guide</div>
+                        <div className="text-xs text-gray-400 mt-1 space-y-1">
+                          <p><span className="text-green-400">+0.7 to +1.0:</span> Strong positive — assets move together</p>
+                          <p><span className="text-red-400">-0.7 to -1.0:</span> Strong negative — assets move opposite</p>
+                          <p><span className="text-yellow-400">±0.4 to ±0.7:</span> Moderate — some relationship</p>
+                          <p><span className="text-gray-500">±0.0 to ±0.4:</span> Weak — little to no relationship</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rolling Correlations */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">Rolling 6-Month Correlations</h3>
+                  <p className="text-xs text-gray-500">Shows how BTC&apos;s relationship with macro assets changes over time. Regime shifts in correlation are often more important than the static number.</p>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <LineChart data={macroData.correlations.rolling}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={1} />
+                      <YAxis domain={[-1, 1]} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
+                        formatter={(v: any) => Number(v).toFixed(3)} />
+                      <Legend />
+                      <Line type="monotone" dataKey="btc_sp500" stroke="#3b82f6" strokeWidth={2} dot={false} name="vs S&P 500" />
+                      <Line type="monotone" dataKey="btc_dxy" stroke="#ef4444" strokeWidth={2} dot={false} name="vs DXY" />
+                      <Line type="monotone" dataKey="btc_m2" stroke="#10b981" strokeWidth={2} dot={false} name="vs M2" />
+                      <Line type="monotone" dataKey="btc_gold" stroke="#facc15" strokeWidth={2} dot={false} name="vs Gold" />
+                      <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
+                      <ReferenceLine y={0.7} stroke="#22c55e" strokeDasharray="2 4" />
+                      <ReferenceLine y={-0.7} stroke="#ef4444" strokeDasharray="2 4" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* BTC vs DXY Inverse Chart */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">BTC Price vs Dollar Strength (DXY)</h3>
+                  <p className="text-xs text-gray-500">BTC and DXY often move inversely. When the dollar weakens, BTC tends to rally as capital seeks alternatives.</p>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <ComposedChart data={macroData.timeSeries}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={2} />
+                      <YAxis yAxisId="btc" tickFormatter={formatPrice} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                      <YAxis yAxisId="dxy" orientation="right" domain={[98, 110]} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }} />
+                      <Legend />
+                      <Area yAxisId="btc" type="monotone" dataKey="btc" stroke="#f97316" fill="#f97316" fillOpacity={0.1} strokeWidth={2} name="BTC Price" />
+                      <Line yAxisId="dxy" type="monotone" dataKey="dxy" stroke="#ef4444" strokeWidth={2} dot={false} name="DXY Index" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* M2 vs BTC Chart */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">BTC Price vs M2 Money Supply</h3>
+                  <p className="text-xs text-gray-500">BTC has historically tracked global M2 expansion. When central banks print money, BTC benefits as a scarce asset.</p>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <ComposedChart data={macroData.timeSeries}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={2} />
+                      <YAxis yAxisId="btc" tickFormatter={formatPrice} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                      <YAxis yAxisId="m2" orientation="right" domain={['auto', 'auto']} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }} />
+                      <Legend />
+                      <Area yAxisId="btc" type="monotone" dataKey="btc" stroke="#f97316" fill="#f97316" fillOpacity={0.1} strokeWidth={2} name="BTC Price" />
+                      <Line yAxisId="m2" type="monotone" dataKey="m2" stroke="#10b981" strokeWidth={2} dot={false} name="M2 ($T)" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </div>
         )}
         {/* DISCLAIMER */}
         <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-4 text-xs text-yellow-300/70">
@@ -1106,47 +1408,4 @@ ${'='.repeat(60)}`;
         </div>
       </div>
     </div>
-  );
-}
-
-// ════
-// SUB-COMPONENTS
-// ════
-
-function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 flex items-center gap-3">
-      {icon}
-      <div>
-        <div className="text-xs text-gray-500">{label}</div>
-        <div className="text-lg font-bold text-gray-100">{value}</div>
-      </div>
-    </div>
-  );
-}
-
-function SignalCard({ label, value, signal }: { label: string; value: string; signal?: string }) {
-  return (
-    <div className="bg-gray-800 rounded-lg p-3">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="font-bold text-gray-100">{value}</div>
-      {signal && <div className="text-xs font-medium text-blue-400 mt-0.5">{signal}</div>}
-    </div>
-  );
-}
-
-function SliderControl({ label, value, min, max, step, display, onChange }: {
-  label: string; value: number; min: number; max: number; step: number; display: string; onChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <div className="flex justify-between text-sm mb-1">
-        <span className="text-gray-400">{label}</span>
-        <span className="font-semibold text-gray-200">{display}</span>
-      </div>
-      <input type="range" min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-orange-500" />
-    </div>
-  );
-}
+  )}
