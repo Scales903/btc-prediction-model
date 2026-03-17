@@ -789,6 +789,7 @@ ${'='.repeat(60)}`;
               className="flex items-center gap-2 px-5 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 disabled:opacity-60 transition-all shadow-md text-sm">
               {isAnalyzing ? <><RefreshCw className="w-4 h-4 animate-spin" /> Analyzing...</> : <><Sparkles className="w-4 h-4" /> Run AI Analysis</>}
             </button>
+            
             <button onClick={exportReport}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-colors">
               <Download className="w-4 h-4" /> Export
@@ -800,21 +801,7 @@ ${'='.repeat(60)}`;
               <p className="text-sm text-gray-400">508 Capital LLC</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={fetchLivePrice} disabled={isLoadingPrice}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-colors">
-              {isLoadingPrice ? <RefreshCw className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4 text-green-400" />}
-              {livePrice ? `$${livePrice.toLocaleString()}` : 'Fetch Price'}
-            </button>
-            <button onClick={runAiAnalysis} disabled={isAnalyzing}
-              className="flex items-center gap-2 px-5 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 disabled:opacity-60 transition-all shadow-md text-sm">
-              {isAnalyzing ? <><RefreshCw className="w-4 h-4 animate-spin" /> Analyzing...</> : <><Sparkles className="w-4 h-4" /> Run AI Analysis</>}
-            </button>
-            <button onClick={exportReport}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-colors">
-              <Download className="w-4 h-4" /> Export
-            </button>
-          </div>
+         
         </div>
 
         {/* AI PANEL */}
