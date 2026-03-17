@@ -790,7 +790,7 @@ ${'='.repeat(60)}`;
             <TrendingUp className="w-8 h-8 text-orange-500" />
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-white">Bitcoin Price Prediction Model</h1>
-              <p className="text-sm text-gray-400">: 508 Capital LLC</p>
+              <p className="text-sm text-gray-400">508 Capital LLC</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
