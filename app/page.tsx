@@ -390,6 +390,9 @@ export default function BTCPredictionModel() {
   // Options data
   const [optionsData, setOptionsData] = useState<any>(null);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  // Backtest data
+  const [backtestData, setBacktestData] = useState<any>(null);
+  const [isLoadingBacktest, setIsLoadingBacktest] = useState(false);
   // Auto-refresh
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(60);
@@ -497,6 +500,24 @@ export default function BTCPredictionModel() {
 
   useEffect(() => {
     fetchOptionsData();
+  }, []);
+  // ── FETCH BACKTEST DATA ─────────────────────────────────────────────────
+
+  const fetchBacktestData = async () => {
+    setIsLoadingBacktest(true);
+    try {
+      const response = await fetch('/api/backtest');
+      const data = await response.json();
+      if (!data.error) setBacktestData(data);
+    } catch (err) {
+      console.error('Backtest fetch error:', err);
+    } finally {
+      setIsLoadingBacktest(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBacktestData();
   }, []);
     // ── AUTO-REFRESH TIMER ──────────────────────────────────────────────────
 
@@ -867,6 +888,8 @@ ${'='.repeat(60)}`;
             { key: 'onchain', label: 'On-Chain Metrics' },
             { key: 'halving', label: 'Halving Cycle' },
             { key: 'macro', label: 'Macro Dashboard' },
+            { key: 'options', label: 'Options Flow' },
+            { key: 'backtest', label: 'Backtesting' },
           ].map(t => (
             <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === 'multiScenario') setShowMultiScenario(true); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
@@ -1931,6 +1954,171 @@ ${'='.repeat(60)}`;
                       <p className="text-gray-400">How much movement options traders expect. Low IV (under 30%) = compression, expect a breakout. High IV (over 60%) = fear/uncertainty, large moves already priced in. IV crush after big moves can create opportunities.</p>
                     </div>
                   </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {/* TAB: BACKTESTING ENGINE */}
+        {activeTab === 'backtest' && (
+          <div className="space-y-6">
+            {!backtestData ? (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-10 text-center">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-500">Running backtest on 365 days of data...</p>
+              </div>
+            ) : (
+              <>
+                <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-700/50 rounded-xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-white">Backtesting Engine (365-Day)</h2>
+                    <button onClick={fetchBacktestData} disabled={isLoadingBacktest}
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700">
+                      {isLoadingBacktest ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Re-run
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">Tests every signal type against real BTC price data from {backtestData.summary.dataRange}. Win rate = price moved in the predicted direction within the timeframe.</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-gray-900/60 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-400">Overall Win Rate (30d)</div>
+                      <div className={`text-3xl font-bold ${backtestData.summary.overallWinRate >= 55 ? 'text-green-400' : backtestData.summary.overallWinRate >= 45 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {backtestData.summary.overallWinRate}%
+                      </div>
+                    </div>
+                    <div className="bg-gray-900/60 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-400">Total Signals</div>
+                      <div className="text-3xl font-bold text-blue-400">{backtestData.summary.totalSignals}</div>
+                    </div>
+                    <div className="bg-gray-900/60 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-400">Bullish Win Rate</div>
+                      <div className="text-3xl font-bold text-green-400">{backtestData.summary.bullishWinRate}%</div>
+                      <div className="text-xs text-gray-500">{backtestData.summary.bullishCount} signals</div>
+                    </div>
+                    <div className="bg-gray-900/60 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-400">Bearish Win Rate</div>
+                      <div className="text-3xl font-bold text-red-400">{backtestData.summary.bearishWinRate}%</div>
+                      <div className="text-xs text-gray-500">{backtestData.summary.bearishCount} signals</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">Signal Performance Breakdown</h3>
+                  <p className="text-xs text-gray-500">Each row shows how a signal type performed historically. Higher win rate + positive avg return = reliable signal.</p>
+                  <div className="space-y-3">
+                    {backtestData.stats.map((stat: any, i: number) => (
+                      <div key={i} className="bg-gray-800 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${stat.direction === 'bullish' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                              {stat.direction.toUpperCase()}
+                            </span>
+                            <span className="text-sm font-medium text-gray-200">{stat.type}</span>
+                            <span className="text-xs text-gray-500">({stat.count} occurrences)</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-lg font-bold ${stat.winRate30d >= 60 ? 'text-green-400' : stat.winRate30d >= 45 ? 'text-yellow-400' : 'text-red-400'}`}>
+                              {stat.winRate30d}%
+                            </span>
+                            <span className="text-xs text-gray-500">30d win rate</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 md:grid-cols-7 gap-2 text-xs">
+                          <div className="bg-gray-900 rounded p-2 text-center">
+                            <div className="text-gray-500">7d Win</div>
+                            <div className={`font-bold ${stat.winRate7d >= 55 ? 'text-green-400' : 'text-red-400'}`}>{stat.winRate7d}%</div>
+                          </div>
+                          <div className="bg-gray-900 rounded p-2 text-center">
+                            <div className="text-gray-500">14d Win</div>
+                            <div className={`font-bold ${stat.winRate14d >= 55 ? 'text-green-400' : 'text-red-400'}`}>{stat.winRate14d}%</div>
+                          </div>
+                          <div className="bg-gray-900 rounded p-2 text-center">
+                            <div className="text-gray-500">30d Win</div>
+                            <div className={`font-bold ${stat.winRate30d >= 55 ? 'text-green-400' : 'text-red-400'}`}>{stat.winRate30d}%</div>
+                          </div>
+                          <div className="bg-gray-900 rounded p-2 text-center">
+                            <div className="text-gray-500">Avg 7d</div>
+                            <div className={`font-bold ${stat.avgReturn7d > 0 ? 'text-green-400' : 'text-red-400'}`}>{stat.avgReturn7d > 0 ? '+' : ''}{stat.avgReturn7d}%</div>
+                          </div>
+                          <div className="bg-gray-900 rounded p-2 text-center">
+                            <div className="text-gray-500">Avg 30d</div>
+                            <div className={`font-bold ${stat.avgReturn30d > 0 ? 'text-green-400' : 'text-red-400'}`}>{stat.avgReturn30d > 0 ? '+' : ''}{stat.avgReturn30d}%</div>
+                          </div>
+                          <div className="bg-gray-900 rounded p-2 text-center">
+                            <div className="text-gray-500">Best 30d</div>
+                            <div className="font-bold text-green-400">+{stat.bestReturn30d}%</div>
+                          </div>
+                          <div className="bg-gray-900 rounded p-2 text-center">
+                            <div className="text-gray-500">Profit Factor</div>
+                            <div className={`font-bold ${stat.profitFactor > 1 ? 'text-green-400' : 'text-red-400'}`}>{stat.profitFactor}x</div>
+                          </div>
+                        </div>
+                        <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden mt-2">
+                          <div className={`h-full rounded-full ${stat.winRate30d >= 60 ? 'bg-green-500' : stat.winRate30d >= 45 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                            style={{ width: `${stat.winRate30d}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {backtestData.equityCurve && backtestData.equityCurve.length > 0 && (
+                  <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                    <h3 className="text-md font-bold text-white">Simulated Equity Curve</h3>
+                    <p className="text-xs text-gray-500">Starting with $10,000 and following every signal (10% position for strong, 5% moderate, 2.5% weak). Min 7 days between trades.</p>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <ComposedChart data={backtestData.equityCurve}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={Math.max(1, Math.floor(backtestData.equityCurve.length / 10))} />
+                        <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} domain={['auto', 'auto']} tickFormatter={(v: number) => `$${(v/1000).toFixed(1)}K`} />
+                        <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
+                          formatter={(v: any) => `$${Number(v).toLocaleString()}`} />
+                        <Area type="monotone" dataKey="equity" stroke="#f97316" fill="#f97316" fillOpacity={0.1} strokeWidth={2} name="Portfolio Value" />
+                        <ReferenceLine y={10000} stroke="#6b7280" strokeDasharray="3 3" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                    <div className="flex gap-4 text-xs text-gray-400">
+                      <span>Start: $10,000</span>
+                      <span>End: ${backtestData.equityCurve[backtestData.equityCurve.length - 1]?.equity.toLocaleString()}</span>
+                      <span>Return: {(((backtestData.equityCurve[backtestData.equityCurve.length - 1]?.equity - 10000) / 10000) * 100).toFixed(1)}%</span>
+                      <span>Trades: {backtestData.equityCurve.length}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">Recent Signal Results</h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {backtestData.recentSignals.map((sig: any, i: number) => (
+                      <div key={i} className={`rounded-lg p-3 border ${sig.hit30d === true ? 'bg-green-900/10 border-green-800/50' : sig.hit30d === false ? 'bg-red-900/10 border-red-800/50' : 'bg-gray-800 border-gray-700'}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${sig.direction === 'bullish' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                              {sig.direction === 'bullish' ? '▲' : '▼'}
+                            </span>
+                            <span className="text-sm text-gray-200">{sig.type}</span>
+                            <span className="text-xs text-gray-500">{sig.date}</span>
+                            <span className="text-xs text-gray-500">${sig.priceAtSignal.toLocaleString()}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs">
+                            <span className={sig.return7d > 0 ? 'text-green-400' : 'text-red-400'}>7d: {sig.return7d > 0 ? '+' : ''}{sig.return7d}%</span>
+                            <span className={sig.return14d > 0 ? 'text-green-400' : 'text-red-400'}>14d: {sig.return14d > 0 ? '+' : ''}{sig.return14d}%</span>
+                            {sig.return30d !== null && (
+                              <span className={sig.return30d > 0 ? 'text-green-400' : 'text-red-400'}>30d: {sig.return30d > 0 ? '+' : ''}{sig.return30d}%</span>
+                            )}
+                            <span className={`font-bold ${sig.hit30d === true ? 'text-green-400' : sig.hit30d === false ? 'text-red-400' : 'text-gray-500'}`}>
+                              {sig.hit30d === true ? '✓ WIN' : sig.hit30d === false ? '✗ LOSS' : 'PENDING'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-gray-800 rounded-lg p-4 space-y-2 text-xs text-gray-400">
+                  <span className="font-bold text-gray-300">Backtesting Methodology:</span>
+                  <p>Signals are detected using the same crossover logic as the Technical Indicators tab. Each signal is measured against actual BTC price at 7, 14, and 30 days after the signal. A bullish signal is a &quot;win&quot; if price went up, bearish if price went down. The equity curve simulates following every signal with position sizing based on signal strength. Past performance does not guarantee future results.</p>
                 </div>
               </>
             )}
