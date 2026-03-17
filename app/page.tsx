@@ -392,6 +392,9 @@ export default function BTCPredictionModel() {
   // Macro data
   const [macroData, setMacroData] = useState<any>(null);
   const [isLoadingMacro, setIsLoadingMacro] = useState(false);
+  // Options data
+  const [optionsData, setOptionsData] = useState<any>(null);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   // ── FETCH LIVE PRICE ────────────────────────────────────────────────────
 
   const fetchLivePrice = async () => {
@@ -476,6 +479,26 @@ export default function BTCPredictionModel() {
 
   useEffect(() => {
     fetchMacroData();
+     }, []);
+    
+    // ── FETCH OPTIONS DATA ──────────────────────────────────────────────────
+
+  const fetchOptionsData = async () => {
+    setIsLoadingOptions(true);
+    try {
+      const response = await fetch('/api/options');
+      const data = await response.json();
+      if (!data.error) setOptionsData(data);
+    } catch (err) {
+      console.error('Options fetch error:', err);
+    } finally {
+      setIsLoadingOptions(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOptionsData();
+  }, []);
     // ── AUTO-REFRESH TIMER ──────────────────────────────────────────────────
 
   useEffect(() => {
@@ -497,7 +520,7 @@ export default function BTCPredictionModel() {
 
     return () => clearInterval(countdownTimer);
   }, [autoRefresh, refreshInterval]);
-  }, []);
+  
 
   // ── PROJECTION ENGINE (Monte Carlo / GBM) ──────────────────────────────
 
@@ -1710,6 +1733,205 @@ ${'='.repeat(60)}`;
                       <Line yAxisId="m2" type="monotone" dataKey="m2" stroke="#10b981" strokeWidth={2} dot={false} name="M2 ($T)" />
                     </ComposedChart>
                   </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* TAB: OPTIONS FLOW */}
+        {activeTab === 'options' && (
+          <div className="space-y-6">
+            {!optionsData ? (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-10 text-center">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-500">Loading options data from Deribit...</p>
+              </div>
+            ) : (
+              <>
+                {/* Overview Cards */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-white">BTC Options Overview (Deribit)</h2>
+                    <button onClick={fetchOptionsData} disabled={isLoadingOptions}
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700">
+                      {isLoadingOptions ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Refresh
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-gray-800 rounded-lg p-4 text-center">
+                      <div className="text-xs text-gray-500">Put/Call Ratio</div>
+                      <div className={`text-3xl font-bold ${
+                        optionsData.overview.aggregatePCR > 1.0 ? 'text-red-400' :
+                        optionsData.overview.aggregatePCR > 0.7 ? 'text-yellow-400' :
+                        'text-green-400'
+                      }`}>{optionsData.overview.aggregatePCR}</div>
+                      <div className={`text-xs mt-1 ${
+                        optionsData.overview.pcrSignal.includes('Bearish') ? 'text-red-400' :
+                        optionsData.overview.pcrSignal.includes('Bullish') ? 'text-green-400' :
+                        'text-yellow-400'
+                      }`}>{optionsData.overview.pcrSignal}</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4 text-center">
+                      <div className="text-xs text-gray-500">Implied Volatility</div>
+                      <div className={`text-3xl font-bold ${
+                        optionsData.overview.currentIV > 60 ? 'text-red-400' :
+                        optionsData.overview.currentIV > 40 ? 'text-yellow-400' :
+                        'text-green-400'
+                      }`}>{optionsData.overview.currentIV}%</div>
+                      <div className="text-xs text-gray-500 mt-1">Historical 30d</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4 text-center">
+                      <div className="text-xs text-gray-500">Nearest Max Pain</div>
+                      <div className="text-3xl font-bold text-orange-400">${optionsData.overview.nearestMaxPain.toLocaleString()}</div>
+                      <div className={`text-xs mt-1 ${optionsData.overview.nearestMaxPainDiff > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {optionsData.overview.nearestMaxPainDiff > 0 ? '+' : ''}{optionsData.overview.nearestMaxPainDiff}% from spot
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4 text-center">
+                      <div className="text-xs text-gray-500">Total Open Interest</div>
+                      <div className="text-3xl font-bold text-blue-400">
+                        {(optionsData.overview.totalCallOI + optionsData.overview.totalPutOI).toLocaleString()}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">BTC in options</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* IV Signal */}
+                <div className={`rounded-xl border p-4 ${
+                  optionsData.overview.currentIV > 60 ? 'bg-red-900/20 border-red-700/50' :
+                  optionsData.overview.currentIV > 40 ? 'bg-yellow-900/20 border-yellow-700/50' :
+                  optionsData.overview.currentIV > 25 ? 'bg-gray-900 border-gray-800' :
+                  'bg-blue-900/20 border-blue-700/50'
+                }`}>
+                  <div className="text-sm font-medium text-gray-200">{optionsData.overview.ivSignal}</div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Implied volatility measures how much the options market expects BTC to move.
+                    Low IV often precedes explosive moves (up or down). High IV means large swings are already priced in.
+                  </p>
+                </div>
+
+                {/* Max Pain by Expiry */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h3 className="text-md font-bold text-white">Max Pain by Expiry</h3>
+                  <p className="text-xs text-gray-500">Max pain is the price where the most options expire worthless. BTC tends to gravitate toward max pain near expiry as market makers hedge their positions.</p>
+
+                  {optionsData.expiryAnalysis.length > 0 ? (
+                    <>
+                      {/* Max Pain Chart */}
+                      <ResponsiveContainer width="100%" height={300}>
+                        <ComposedChart data={optionsData.expiryAnalysis.slice(0, 12)}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                          <XAxis dataKey="expiry" tick={{ fontSize: 9, fill: '#9ca3af' }} angle={-30} textAnchor="end" height={60} />
+                          <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={['auto', 'auto']} />
+                          <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
+                            formatter={(v: any) => `$${Number(v).toLocaleString()}`} />
+                          <Legend />
+                          <Bar dataKey="maxPain" fill="#f97316" name="Max Pain" radius={[4, 4, 0, 0]} />
+                          <ReferenceLine y={optionsData.btcPrice} stroke="#22c55e" strokeDasharray="3 3" label={{ value: `Spot: $${optionsData.btcPrice.toLocaleString()}`, fill: '#22c55e', fontSize: 10 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+
+                      {/* Expiry Cards */}
+                      <div className="space-y-3 max-h-96 overflow-y-auto">
+                        {optionsData.expiryAnalysis.slice(0, 8).map((exp: any) => (
+                          <div key={exp.expiry} className="bg-gray-800 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-white">{exp.expiry}</span>
+                                <span className="text-xs text-gray-500">{exp.daysToExpiry}d to expiry</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-orange-400">Max Pain: ${exp.maxPain.toLocaleString()}</span>
+                                <span className={`text-xs font-medium ${exp.maxPainDiff > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                  {exp.maxPainDiff > 0 ? '+' : ''}{exp.maxPainDiff}%
+                                </span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-4 gap-3 text-xs">
+                              <div>
+                                <span className="text-gray-500">Call OI: </span>
+                                <span className="text-green-400">{exp.totalCallOI.toLocaleString()} BTC</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Put OI: </span>
+                                <span className="text-red-400">{exp.totalPutOI.toLocaleString()} BTC</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">P/C: </span>
+                                <span className={`${exp.pcRatio > 1 ? 'text-red-400' : exp.pcRatio > 0.7 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                  {exp.pcRatio}
+                                </span>
+                              </div>
+                              <div>
+                                <span className={`${
+                                  exp.pcSignal.includes('Bearish') ? 'text-red-400' :
+                                  exp.pcSignal.includes('Bullish') ? 'text-green-400' : 'text-yellow-400'
+                                }`}>{exp.pcSignal}</span>
+                              </div>
+                            </div>
+                            {/* Top Strikes */}
+                            {exp.topStrikes && exp.topStrikes.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-gray-700">
+                                <div className="text-xs text-gray-500 mb-2">Top Strikes by Open Interest:</div>
+                                <div className="flex flex-wrap gap-2">
+                                  {exp.topStrikes.slice(0, 6).map((s: any, i: number) => (
+                                    <div key={i} className="bg-gray-900 rounded px-2 py-1 text-xs">
+                                      <span className="text-gray-300">${s.strike.toLocaleString()}</span>
+                                      <span className="text-green-400 ml-1">C:{s.callOI.toFixed(1)}</span>
+                                      <span className="text-red-400 ml-1">P:{s.putOI.toFixed(1)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-500 text-center py-4">No expiry data available</div>
+                  )}
+                </div>
+
+                {/* Historical Volatility Chart */}
+                {optionsData.historicalVolatility && optionsData.historicalVolatility.length > 0 && (
+                  <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                    <h3 className="text-md font-bold text-white">Historical Volatility (30-Day)</h3>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <ComposedChart data={optionsData.historicalVolatility}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={Math.max(1, Math.floor(optionsData.historicalVolatility.length / 10))} />
+                        <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                        <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
+                          formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                        <Legend />
+                        <Area type="monotone" dataKey="volatility" stroke="#a78bfa" fill="#a78bfa" fillOpacity={0.15} strokeWidth={2} name="Historical Volatility %" />
+                        <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'High Vol', fill: '#ef4444', fontSize: 10 }} />
+                        <ReferenceLine y={25} stroke="#22c55e" strokeDasharray="3 3" label={{ value: 'Low Vol', fill: '#22c55e', fontSize: 10 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                {/* Options Interpretation Guide */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+                  <h3 className="text-md font-bold text-white">Options Signal Interpretation</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+                      <div className="font-bold text-orange-400">Max Pain</div>
+                      <p className="text-gray-400">The price at which the most options expire worthless. BTC gravitates toward max pain near expiry (especially monthly/quarterly). If spot is far above max pain, expect downward pressure. If far below, expect upward pull.</p>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+                      <div className="font-bold text-blue-400">Put/Call Ratio</div>
+                      <p className="text-gray-400">Measures bearish vs bullish positioning. Above 1.0 = more puts (bearish hedging or bets). Below 0.5 = heavy call buying (bullish). Extreme readings often signal contrarian opportunities — heavy put buying can precede rallies.</p>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+                      <div className="font-bold text-purple-400">Implied Volatility</div>
+                      <p className="text-gray-400">How much movement options traders expect. Low IV (under 30%) = compression, expect a breakout. High IV (over 60%) = fear/uncertainty, large moves already priced in. IV crush after big moves can create opportunities.</p>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
