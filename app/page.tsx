@@ -358,11 +358,6 @@ function detectCrossovers(data: any[]): { type: string; signal: 'bullish' | 'bea
 // ════
 // MAIN COMPONENT
 // ════
-// Auto-refresh
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [refreshInterval, setRefreshInterval] = useState(60);
-  const [countdown, setCountdown] = useState(60);
-
 export default function BTCPredictionModel() {
   const [currentPrice, setCurrentPrice] = useState(70000);
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -395,6 +390,10 @@ export default function BTCPredictionModel() {
   // Options data
   const [optionsData, setOptionsData] = useState<any>(null);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  // Auto-refresh
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(60);
+  const [countdown, setCountdown] = useState(60);
   // ── FETCH LIVE PRICE ────────────────────────────────────────────────────
 
   const fetchLivePrice = async () => {
