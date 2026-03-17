@@ -122,7 +122,15 @@ export default function BTCPredictionModel() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lastAiUpdate, setLastAiUpdate] = useState<string | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(true);
-
+// Live market data
+  const [liveData, setLiveData] = useState<any>(null);
+  const [liveTechnicals, setLiveTechnicals] = useState<any[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [dataLastUpdated, setDataLastUpdated] = useState<string>('');
+  // On-chain data
+  const [onchainData, setOnchainData] = useState<any>(null);
+  const [isLoadingOnchain, setIsLoadingOnchain] = useState(false);
   // ── FETCH LIVE PRICE ────────────────────────────────────────────────────
 
   const fetchLivePrice = async () => {
@@ -142,6 +150,53 @@ export default function BTCPredictionModel() {
 
   useEffect(() => {
     fetchLivePrice();
+  }, []);
+// ── FETCH LIVE MARKET DATA ──────────────────────────────────────────────
+
+  const fetchMarketData = async (days: number = 90) => {
+    setIsLoadingData(true);
+    setDataError(null);
+    try {
+      const response = await fetch(`/api/market-data?days=${days}`);
+      const data = await response.json();
+      if (data.error) {
+        setDataError(data.error);
+      } else {
+        setLiveData(data.snapshot);
+        setLiveTechnicals(data.timeSeries);
+        setDataLastUpdated(new Date().toLocaleTimeString());
+        if (data.snapshot.price) {
+          setCurrentPrice(data.snapshot.price);
+          setLivePrice(data.snapshot.price);
+        }
+      }
+    } catch (err) {
+      setDataError('Failed to fetch market data');
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMarketData(90);
+  }, []);
+  // ── FETCH ON-CHAIN DATA ─────────────────────────────────────────────────
+
+  const fetchOnchainData = async () => {
+    setIsLoadingOnchain(true);
+    try {
+      const response = await fetch('/api/onchain');
+      const data = await response.json();
+      if (!data.error) setOnchainData(data);
+    } catch (err) {
+      console.error('On-chain fetch error:', err);
+    } finally {
+      setIsLoadingOnchain(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOnchainData();
   }, []);
 
   // ── PROJECTION ENGINE (Monte Carlo / GBM) ──────────────────────────────
@@ -432,11 +487,14 @@ ${'='.repeat(60)}`;
         {/* QUICK METRICS */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <MetricCard icon={<DollarSign className="w-5 h-5 text-orange-500" />} label="Starting Price" value={formatLargePrice(currentPrice)} />
-          <MetricCard icon={<TrendingUp className="w-5 h-5 text-green-500" />} label="Expected Change"
-            value={finalProjection ? `${((finalProjection.median - currentPrice) / currentPrice * 100).toFixed(1)}%` : '—'} />
-          <MetricCard icon={<Activity className="w-5 h-5 text-blue-500" />} label="RSI" value={`${latestTech.rsi} (${rsiSignal})`} />
-          <MetricCard icon={<Building2 className="w-5 h-5 text-purple-500" />} label="ETF Cumulative" value={`$${(latestETF.cumulative / 1000).toFixed(1)}B`} />
-          <MetricCard icon={<Activity className="w-5 h-5 text-yellow-500" />} label="Funding Rate" value={`${(latestExchange.fundingRate * 100).toFixed(2)}%`} />
+          <MetricCard icon={<TrendingUp className="w-5 h-5 text-green-500" />} label="24h Change"
+            value={liveData ? `${liveData.change24h > 0 ? '+' : ''}${liveData.change24h}%` : (finalProjection ? `${((finalProjection.median - currentPrice) / currentPrice * 100).toFixed(1)}%` : '—')} />
+          <MetricCard icon={<Activity className="w-5 h-5 text-blue-500" />} label="RSI"
+            value={`${liveData?.rsi ?? latestTech.rsi} (${(liveData?.rsi ?? latestTech.rsi) > 70 ? 'Overbought' : (liveData?.rsi ?? latestTech.rsi) < 30 ? 'Oversold' : 'Neutral'})`} />
+          <MetricCard icon={<Building2 className="w-5 h-5 text-purple-500" />} label="Market Cap"
+            value={liveData ? `$${liveData.marketCap}B` : `$${(latestETF.cumulative / 1000).toFixed(1)}B`} />
+          <MetricCard icon={<Activity className="w-5 h-5 text-yellow-500" />} label="30d Change"
+            value={liveData ? `${liveData.change30d > 0 ? '+' : ''}${liveData.change30d}%` : `${(latestExchange.fundingRate * 100).toFixed(2)}%`} />
         </div>
 
         {/* TABS */}
@@ -450,6 +508,8 @@ ${'='.repeat(60)}`;
             { key: 'exchange', label: 'Exchange Data' },
             { key: 'whale', label: 'Whale Activity' },
             { key: 'accuracy', label: 'Model Accuracy' },
+            { key: 'onchain', label: 'On-Chain Metrics' },
+            { key: 'halving', label: 'Halving Cycle' },
           ].map(t => (
             <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === 'multiScenario') setShowMultiScenario(true); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
@@ -547,30 +607,70 @@ ${'='.repeat(60)}`;
           </div>
         )}
 
-        {/* TAB: TECHNICALS */}
+  {/* TAB: TECHNICALS */}
         {activeTab === 'technicals' && (
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-5">
-            <h2 className="text-lg font-bold text-white">Technical Indicators</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <SignalCard label="RSI (14)" value={`${latestTech.rsi}`} signal={rsiSignal} />
-              <SignalCard label="MACD" value={latestTech.macd.toLocaleString()} signal={macdSignal} />
-              <SignalCard label="SMA 50" value={formatLargePrice(latestTech.sma50)} />
-              <SignalCard label="SMA 200" value={formatLargePrice(latestTech.sma200)} />
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Technical Indicators {liveData ? '(Live)' : '(Static)'}</h2>
+              <div className="flex items-center gap-2">
+                {dataLastUpdated && <span className="text-xs text-gray-500">Updated {dataLastUpdated}</span>}
+                <button onClick={() => fetchMarketData(90)} disabled={isLoadingData}
+                  className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-colors">
+                  {isLoadingData ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Refresh
+                </button>
+              </div>
             </div>
+            {dataError && <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-3 text-red-300 text-xs">{dataError}</div>}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <SignalCard label="RSI (14)" value={`${liveData?.rsi ?? latestTech.rsi}`}
+                signal={((liveData?.rsi ?? latestTech.rsi) > 70 ? 'Overbought' : (liveData?.rsi ?? latestTech.rsi) < 30 ? 'Oversold' : 'Neutral')} />
+              <SignalCard label="MACD" value={`${(liveData?.macd ?? latestTech.macd).toLocaleString()}`}
+                signal={(liveData?.histogram ?? latestTech.histogram) > 0 ? 'Bullish' : 'Bearish'} />
+              <SignalCard label="SMA 50" value={`$${(liveData?.sma50 ?? latestTech.sma50).toLocaleString()}`} />
+              <SignalCard label="24h Change" value={liveData ? `${liveData.change24h > 0 ? '+' : ''}${liveData.change24h}%` : 'N/A'}
+                signal={liveData?.change24h > 0 ? 'Bullish' : liveData?.change24h < 0 ? 'Bearish' : undefined} />
+            </div>
+            {liveData && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <SignalCard label="24h Volume" value={`$${liveData.volume24h}B`} />
+                <SignalCard label="Market Cap" value={`$${liveData.marketCap}B`} />
+                <SignalCard label="BB Upper" value={`$${liveData.bbUpper?.toLocaleString()}`} />
+                <SignalCard label="BB Lower" value={`$${liveData.bbLower?.toLocaleString()}`} />
+              </div>
+            )}
+            {/* RSI + MACD Chart */}
             <ResponsiveContainer width="100%" height={350}>
-              <ComposedChart data={TECHNICAL_DATA}>
+              <ComposedChart data={liveTechnicals.length > 0 ? liveTechnicals : TECHNICAL_DATA}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={Math.max(1, Math.floor((liveTechnicals.length || 5) / 10))} />
                 <YAxis yAxisId="rsi" orientation="left" domain={[0, 100]} tick={{ fontSize: 11, fill: '#9ca3af' }} />
                 <YAxis yAxisId="macd" orientation="right" tick={{ fontSize: 11, fill: '#9ca3af' }} />
                 <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }} />
                 <Legend />
-                <Line yAxisId="rsi" type="monotone" dataKey="rsi" stroke="#f97316" strokeWidth={2} name="RSI" />
+                <Line yAxisId="rsi" type="monotone" dataKey="rsi" stroke="#f97316" strokeWidth={2} dot={false} name="RSI" connectNulls />
                 <Bar yAxisId="macd" dataKey="histogram" fill="#818cf8" opacity={0.6} name="MACD Histogram" />
-                <Line yAxisId="macd" type="monotone" dataKey="macd" stroke="#10b981" strokeWidth={1.5} name="MACD" />
-                <Line yAxisId="macd" type="monotone" dataKey="signal" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 4" name="Signal" />
+                <Line yAxisId="macd" type="monotone" dataKey="macd" stroke="#10b981" strokeWidth={1.5} dot={false} name="MACD" connectNulls />
+                <Line yAxisId="macd" type="monotone" dataKey="signal" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 4" dot={false} name="Signal" connectNulls />
                 <ReferenceLine yAxisId="rsi" y={70} stroke="#ef4444" strokeDasharray="3 3" />
                 <ReferenceLine yAxisId="rsi" y={30} stroke="#10b981" strokeDasharray="3 3" />
+              </ComposedChart>
+            </ResponsiveContainer>
+            {/* Price + Moving Averages + Bollinger */}
+            <h3 className="text-sm font-bold text-gray-300 mt-4">Price with Moving Averages & Bollinger Bands</h3>
+            <ResponsiveContainer width="100%" height={350}>
+              <ComposedChart data={liveTechnicals.length > 0 ? liveTechnicals : []}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={Math.max(1, Math.floor((liveTechnicals.length || 5) / 10))} />
+                <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={['auto', 'auto']} />
+                <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
+                  formatter={(v: any) => v ? `$${Number(v).toLocaleString()}` : 'N/A'} />
+                <Legend />
+                <Area type="monotone" dataKey="bbUpper" stroke="none" fill="#6366f1" fillOpacity={0.1} name="BB Upper" connectNulls />
+                <Area type="monotone" dataKey="bbLower" stroke="none" fill="#6366f1" fillOpacity={0.1} name="BB Lower" connectNulls />
+                <Line type="monotone" dataKey="price" stroke="#f97316" strokeWidth={2} dot={false} name="Price" />
+                <Line type="monotone" dataKey="sma20" stroke="#a78bfa" strokeWidth={1} dot={false} name="SMA 20" connectNulls strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="sma50" stroke="#22c55e" strokeWidth={1.5} dot={false} name="SMA 50" connectNulls />
+                <Line type="monotone" dataKey="ema12" stroke="#facc15" strokeWidth={1} dot={false} name="EMA 12" connectNulls strokeDasharray="3 3" />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -580,25 +680,25 @@ ${'='.repeat(60)}`;
         {activeTab === 'ichimoku' && (
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">Ichimoku Cloud</h2>
+              <h2 className="text-lg font-bold text-white">Ichimoku Cloud {liveTechnicals.length > 0 ? '(Live)' : ''}</h2>
               <span className={`text-sm font-medium px-3 py-1 rounded-full ${
                 ichimokuSignal.includes('Bullish') ? 'bg-green-900/50 text-green-400' :
                 ichimokuSignal.includes('Bearish') ? 'bg-red-900/50 text-red-400' : 'bg-yellow-900/50 text-yellow-400'
               }`}>{ichimokuSignal}</span>
             </div>
             <ResponsiveContainer width="100%" height={400}>
-              <ComposedChart data={ICHIMOKU_DATA}>
+              <ComposedChart data={liveTechnicals.length > 0 ? liveTechnicals : ICHIMOKU_DATA}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={Math.max(1, Math.floor((liveTechnicals.length || 5) / 10))} />
                 <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={['auto', 'auto']} />
                 <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
-                  formatter={(v: any) => formatLargePrice(v)} />
+                  formatter={(v: any) => v ? `$${Number(v).toLocaleString()}` : 'N/A'} />
                 <Legend />
-                <Area type="monotone" dataKey="senkouA" stroke="none" fill="#065f46" fillOpacity={0.3} name="Senkou A" />
-                <Area type="monotone" dataKey="senkouB" stroke="none" fill="#7f1d1d" fillOpacity={0.2} name="Senkou B" />
-                <Line type="monotone" dataKey="tenkan" stroke="#ef4444" strokeWidth={1.5} name="Tenkan-sen" dot={false} />
-                <Line type="monotone" dataKey="kijun" stroke="#3b82f6" strokeWidth={1.5} name="Kijun-sen" dot={false} />
-                <Line type="monotone" dataKey="price" stroke="#f97316" strokeWidth={2.5} name="BTC Price" />
+                <Area type="monotone" dataKey="senkouA" stroke="none" fill="#065f46" fillOpacity={0.3} name="Senkou A" connectNulls />
+                <Area type="monotone" dataKey="senkouB" stroke="none" fill="#7f1d1d" fillOpacity={0.2} name="Senkou B" connectNulls />
+                <Line type="monotone" dataKey="tenkan" stroke="#ef4444" strokeWidth={1.5} name="Tenkan-sen" dot={false} connectNulls />
+                <Line type="monotone" dataKey="kijun" stroke="#3b82f6" strokeWidth={1.5} name="Kijun-sen" dot={false} connectNulls />
+                <Line type="monotone" dataKey="price" stroke="#f97316" strokeWidth={2.5} name="BTC Price" dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -724,7 +824,281 @@ ${'='.repeat(60)}`;
             </div>
           </div>
         )}
+{/* TAB: ON-CHAIN METRICS */}
+        {activeTab === 'onchain' && (
+          <div className="space-y-6">
+            {!onchainData ? (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-10 text-center">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-500">Loading on-chain data...</p>
+              </div>
+            ) : (
+              <>
+                {/* MVRV & NUPL */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-5">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-white">Valuation Metrics</h2>
+                    <button onClick={fetchOnchainData} disabled={isLoadingOnchain}
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700">
+                      {isLoadingOnchain ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Refresh
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* MVRV Card */}
+                    <div className="bg-gray-800 rounded-lg p-5 space-y-3">
+                      <div className="text-sm text-gray-400">MVRV Ratio (Market Value / Realized Value)</div>
+                      <div className="flex items-end gap-3">
+                        <span className={`text-4xl font-bold ${
+                          onchainData.onchain.mvrv > 3.5 ? 'text-red-400' :
+                          onchainData.onchain.mvrv > 2.5 ? 'text-orange-400' :
+                          onchainData.onchain.mvrv > 1.5 ? 'text-yellow-400' :
+                          onchainData.onchain.mvrv > 1.0 ? 'text-green-400' : 'text-emerald-400'
+                        }`}>{onchainData.onchain.mvrv}x</span>
+                      </div>
+                      <p className="text-xs text-gray-400">{onchainData.onchain.mvrvSignal}</p>
+                      <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-red-500"
+                          style={{ width: `${Math.min(100, (onchainData.onchain.mvrv / 5) * 100)}%` }} />
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>Undervalued</span><span>Fair</span><span>Overvalued</span><span>Extreme</span>
+                      </div>
+                      <div className="bg-gray-900 rounded p-3 mt-2">
+                        <div className="text-xs text-gray-500">Estimated Realized Price</div>
+                        <div className="text-lg font-bold text-gray-200">${onchainData.onchain.estimatedRealizedPrice.toLocaleString()}</div>
+                        <div className="text-xs text-gray-500 mt-1">This is the average cost basis of all BTC holders. Price falling below this level historically marks cycle bottoms.</div>
+                      </div>
+                    </div>
 
+                    {/* NUPL Card */}
+                    <div className="bg-gray-800 rounded-lg p-5 space-y-3">
+                      <div className="text-sm text-gray-400">NUPL (Net Unrealized Profit/Loss)</div>
+                      <div className="flex items-end gap-3">
+                        <span className={`text-4xl font-bold ${
+                          onchainData.onchain.nupl > 0.7 ? 'text-red-400' :
+                          onchainData.onchain.nupl > 0.5 ? 'text-orange-400' :
+                          onchainData.onchain.nupl > 0.25 ? 'text-green-400' :
+                          onchainData.onchain.nupl > 0 ? 'text-yellow-400' : 'text-red-500'
+                        }`}>{(onchainData.onchain.nupl * 100).toFixed(1)}%</span>
+                      </div>
+                      <p className="text-xs text-gray-400">{onchainData.onchain.nuplSignal}</p>
+                      <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-red-600 via-yellow-500 via-green-500 to-red-400"
+                          style={{ width: `${Math.min(100, ((onchainData.onchain.nupl + 0.3) / 1.0) * 100)}%` }} />
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>Capitulation</span><span>Hope</span><span>Optimism</span><span>Euphoria</span>
+                      </div>
+                      <div className="bg-gray-900 rounded p-3 mt-2">
+                        <div className="text-xs text-gray-500">Thermocap Multiple</div>
+                        <div className="text-lg font-bold text-gray-200">{onchainData.onchain.thermocapMultiple}x</div>
+                        <div className="text-xs text-gray-500 mt-1">Ratio of market cap to cumulative miner revenue. Values above 30x have historically marked cycle tops.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stock-to-Flow */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h2 className="text-lg font-bold text-white">Stock-to-Flow Model</h2>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="text-xs text-gray-500">S2F Ratio</div>
+                      <div className="text-2xl font-bold text-orange-400">{onchainData.stockToFlow.ratio}</div>
+                      <div className="text-xs text-gray-500 mt-1">Higher = scarcer (Gold ≈ 62)</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="text-xs text-gray-500">S2F Model Price</div>
+                      <div className="text-2xl font-bold text-green-400">${onchainData.stockToFlow.modelPrice.toLocaleString()}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {onchainData.currentCycle.currentPrice > onchainData.stockToFlow.modelPrice ? 'Trading above model' : 'Trading below model'}
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="text-xs text-gray-500">Daily Issuance</div>
+                      <div className="text-2xl font-bold text-blue-400">{onchainData.stockToFlow.dailyProduction} BTC</div>
+                      <div className="text-xs text-gray-500 mt-1">${(onchainData.stockToFlow.dailyProduction * onchainData.currentCycle.currentPrice).toLocaleString()}/day</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="text-xs text-gray-500">Annual Inflation</div>
+                      <div className="text-2xl font-bold text-purple-400">{onchainData.supply.annualInflation}%</div>
+                      <div className="text-xs text-gray-500 mt-1">Lower than gold (~1.5%)</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Supply Metrics */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h2 className="text-lg font-bold text-white">Supply Metrics</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-800 rounded-lg p-4">
+                      <div className="text-sm text-gray-400 mb-2">Supply Mined</div>
+                      <div className="text-3xl font-bold text-orange-400">{onchainData.supply.percentMined}%</div>
+                      <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden mt-2">
+                        <div className="h-full rounded-full bg-orange-500" style={{ width: `${onchainData.supply.percentMined}%` }} />
+                      </div>
+                      <div className="text-xs text-gray-500 mt-2">{onchainData.supply.circulating.toLocaleString()} / {onchainData.supply.max.toLocaleString()} BTC</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4">
+                      <div className="text-sm text-gray-400 mb-2">Remaining to Mine</div>
+                      <div className="text-3xl font-bold text-blue-400">{onchainData.supply.remainingBTC.toLocaleString()}</div>
+                      <div className="text-xs text-gray-500 mt-2">At current rate: {onchainData.stockToFlow.dailyProduction} BTC/day</div>
+                      <div className="text-xs text-gray-500">Final BTC mined ~2140</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4">
+                      <div className="text-sm text-gray-400 mb-2">Current Block Reward</div>
+                      <div className="text-3xl font-bold text-green-400">3.125 BTC</div>
+                      <div className="text-xs text-gray-500 mt-2">Post-4th halving (Apr 2024)</div>
+                      <div className="text-xs text-gray-500">Next: 1.5625 BTC (~Mar 2028)</div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* TAB: HALVING CYCLE */}
+        {activeTab === 'halving' && (
+          <div className="space-y-6">
+            {!onchainData ? (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-10 text-center">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-500">Loading cycle data...</p>
+              </div>
+            ) : (
+              <>
+                {/* Cycle Position */}
+                <div className="bg-gradient-to-r from-orange-900/30 to-yellow-900/30 border border-orange-700/50 rounded-xl p-5 space-y-4">
+                  <h2 className="text-lg font-bold text-white">Current Halving Cycle Position</h2>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-orange-400">{onchainData.currentCycle.cycleProgress}%</div>
+                      <div className="text-xs text-gray-400 mt-1">Cycle Progress</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-green-400">{onchainData.currentCycle.currentMultiple}x</div>
+                      <div className="text-xs text-gray-400 mt-1">Return Since Halving</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-blue-400">{onchainData.currentCycle.daysSinceHalving}</div>
+                      <div className="text-xs text-gray-400 mt-1">Days Since Halving</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-purple-400">{onchainData.currentCycle.daysToNextHalving}</div>
+                      <div className="text-xs text-gray-400 mt-1">Days to Next Halving</div>
+                    </div>
+                  </div>
+                  <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-to-r from-orange-600 to-yellow-500 relative"
+                      style={{ width: `${onchainData.currentCycle.cycleProgress}%` }}>
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Halving (Apr 2024)</span>
+                    <span>Projected Peak Window ({onchainData.currentCycle.projectedPeakWindow.earliest.slice(0,7)} – {onchainData.currentCycle.projectedPeakWindow.latest.slice(0,7)})</span>
+                    <span>Next Halving (~Mar 2028)</span>
+                  </div>
+                </div>
+
+                {/* Cycle Comparison Chart */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h2 className="text-lg font-bold text-white">Cycle Performance Comparison (Normalized to Halving Price)</h2>
+                  <p className="text-sm text-gray-400">Each line shows price as a multiple of the halving day price. For example, 2x = doubled from halving price.</p>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <ComposedChart>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                      <XAxis dataKey="day" type="number" domain={[0, 720]}
+                        tick={{ fontSize: 11, fill: '#9ca3af' }}
+                        label={{ value: 'Days After Halving', position: 'insideBottom', offset: -5, fill: '#9ca3af', fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }}
+                        label={{ value: 'Price Multiple (x)', angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 11 }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
+                        formatter={(v: any) => `${Number(v).toFixed(2)}x`}
+                        labelFormatter={(l) => `Day ${l}`} />
+                      <Legend />
+                      <Line data={onchainData.cycleComparison.cycle2} dataKey="price" stroke="#3b82f6" strokeWidth={1.5}
+                        dot={false} name="Cycle 2 (2016-2020)" type="monotone" />
+                      <Line data={onchainData.cycleComparison.cycle3} dataKey="price" stroke="#8b5cf6" strokeWidth={1.5}
+                        dot={false} name="Cycle 3 (2020-2024)" type="monotone" />
+                      <Line data={onchainData.cycleComparison.cycle4} dataKey="price" stroke="#f97316" strokeWidth={2.5}
+                        dot={{ r: 3, fill: '#f97316' }} name="Cycle 4 (Current)" type="monotone" />
+                      <ReferenceLine x={onchainData.currentCycle.daysSinceHalving} stroke="#f97316" strokeDasharray="3 3" />
+                      <ReferenceLine y={1} stroke="#6b7280" strokeDasharray="3 3" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Historical Halving Table */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+                  <h2 className="text-lg font-bold text-white">Halving History</h2>
+                  <div className="space-y-3">
+                    {onchainData.halvings.map((h: any) => (
+                      <div key={h.number} className={`rounded-lg p-4 ${h.number === 4 ? 'bg-orange-900/20 border border-orange-700/50' : 'bg-gray-800'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                                h.number === 4 ? 'bg-orange-900/50 text-orange-400' : 'bg-gray-700 text-gray-300'
+                              }`}>Halving #{h.number}</span>
+                              <span className="text-sm text-gray-400">{h.date}</span>
+                              {h.number === 4 && <span className="text-xs text-orange-400 font-medium">CURRENT CYCLE</span>}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">Block {h.block.toLocaleString()} | Reward: {h.reward} BTC</div>
+                          </div>
+                          <div className="flex gap-6 text-sm">
+                            <div>
+                              <div className="text-xs text-gray-500">Price at Halving</div>
+                              <div className="font-bold text-gray-200">${h.priceAtHalving.toLocaleString()}</div>
+                            </div>
+                            {h.cyclePeak !== null ? (
+                              <>
+                                <div>
+                                  <div className="text-xs text-gray-500">Cycle Peak</div>
+                                  <div className="font-bold text-green-400">${h.cyclePeak.toLocaleString()}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">Peak Multiple</div>
+                                  <div className="font-bold text-orange-400">{h.peakMultiple}x</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">Days to Peak</div>
+                                  <div className="font-bold text-blue-400">{h.daysToPeak}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">Peak Drawdown</div>
+                                  <div className="font-bold text-red-400">{h.drawdownFromPeak}%</div>
+                                </div>
+                              </>
+                            ) : (
+                              <div>
+                                <div className="text-xs text-gray-500">Current Multiple</div>
+                                <div className="font-bold text-orange-400">{onchainData.currentCycle.currentMultiple}x</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Cycle Insight */}
+                  <div className="bg-gray-800 rounded-lg p-4 space-y-2">
+                    <div className="text-sm font-bold text-gray-300">Cycle Pattern Insight</div>
+                    <p className="text-xs text-gray-400">
+                      Historical pattern: Peak multiples are diminishing each cycle (95x → 30x → 7.8x). If the pattern holds,
+                      Cycle 4 peak could be in the 2.5x–4x range from halving price (${Math.round(onchainData.currentCycle.halvingPrice * 2.5).toLocaleString()} – ${Math.round(onchainData.currentCycle.halvingPrice * 4).toLocaleString()}).
+                      Peaks have occurred 371–548 days after halving, suggesting the current cycle peak window is approximately {onchainData.currentCycle.projectedPeakWindow.earliest} to {onchainData.currentCycle.projectedPeakWindow.latest}.
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Important: Diminishing returns doesn't guarantee the pattern continues. Institutional adoption via ETFs is a structural change that could break historical norms.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {/* DISCLAIMER */}
         <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-4 text-xs text-yellow-300/70">
           <strong>Disclaimer:</strong> This model uses geometric Brownian motion with Monte Carlo simulation.
