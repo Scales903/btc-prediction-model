@@ -10,9 +10,9 @@ import {
   Sparkles, RefreshCw, ChevronDown, ChevronUp, Download, Brain
 } from 'lucide-react';
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 // CONSTANTS & HISTORICAL DATA
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 
 const ETF_DATA = [
   { month: 'Feb 24', ibit: 0, fbtc: 0, arkb: 0, btcPrice: 43000, totalFlow: 0, cumulative: 0 },
@@ -81,9 +81,9 @@ const ACCURACY_DATA = [
   { period: '180-Day', predicted: 72000, actual: 103500, accuracy: 69.6 },
 ];
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 // HELPERS
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 
 function formatPrice(val: number) {
   if (val >= 1000) return `$${(val / 1000).toFixed(1)}K`;
@@ -101,9 +101,9 @@ function gaussianRandom() {
   return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 // MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 
 export default function BTCPredictionModel() {
   const [currentPrice, setCurrentPrice] = useState(70000);
@@ -234,51 +234,30 @@ export default function BTCPredictionModel() {
 
   // ── AI AGENT ────────────────────────────────────────────────────────────
 
-  const runAiAnalysis = async () => {
+const runAiAnalysis = async () => {
     setIsAnalyzing(true);
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-          messages: [{
-            role: 'user',
-            content: `You are a Bitcoin market analyst. Search for the current Bitcoin price and the latest BTC news from the last 48 hours. Then respond ONLY with a JSON object (no markdown fences, no preamble) with these fields:
-{
-  "currentPrice": <number, current BTC price in USD>,
-  "sentimentScore": <number 1-10, 1=extreme fear, 10=extreme greed>,
-  "recommendedTrend": <number, suggested annual trend % e.g. 15 or -10>,
-  "recommendedVolatility": <number, suggested annualized volatility % e.g. 18>,
-  "confidence": "<high|medium|low>",
-  "headline": "<one-line market summary>",
-  "findings": ["<finding 1>", "<finding 2>", "<finding 3>", "<finding 4>"]
-}`
-          }]
-        })
-      });
-
+      const response = await fetch('/api/ai-analysis', { method: 'POST' });
       const data = await response.json();
-      const textBlocks = data.content?.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('') || '';
-      const cleaned = textBlocks.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
 
-      setAiAnalysis(parsed);
-      setLastAiUpdate(new Date().toLocaleString());
-
-      if (parsed.currentPrice) setCurrentPrice(Math.round(parsed.currentPrice));
-      if (parsed.recommendedTrend != null) setTrend(parsed.recommendedTrend);
-      if (parsed.recommendedVolatility != null) setVolatility(parsed.recommendedVolatility);
-      setSelectedScenario('custom');
+      if (data.error) {
+        setAiAnalysis({ error: data.error });
+      } else {
+        setAiAnalysis(data);
+        setLastAiUpdate(new Date().toLocaleString());
+        if (data.currentPrice) setCurrentPrice(Math.round(data.currentPrice));
+        if (data.recommendedTrend != null) setTrend(data.recommendedTrend);
+        if (data.recommendedVolatility != null) setVolatility(data.recommendedVolatility);
+        setSelectedScenario('custom');
+      }
     } catch (err) {
       console.error('AI Analysis error:', err);
-      setAiAnalysis({ error: 'Analysis failed. The AI agent requires the Anthropic API. Check console for details.' });
+      setAiAnalysis({ error: 'Failed to connect to AI analysis endpoint.' });
     } finally {
       setIsAnalyzing(false);
     }
   };
+
 
   // ── EXPORT REPORT ───────────────────────────────────────────────────────
 
@@ -292,7 +271,7 @@ export default function BTCPredictionModel() {
 
     const content = `BITCOIN PRICE PREDICTION MODEL - COMPREHENSIVE ANALYSIS
 Generated: ${new Date().toLocaleString()}
-: 508 Capital LLC LLC
+: 508 Capital LLC
 
 ${'='.repeat(60)}
 EXECUTIVE SUMMARY
@@ -365,9 +344,9 @@ ${'='.repeat(60)}`;
   const fundingSignal = latestExchange.fundingRate > 0.030 ? 'Overheated' :
     latestExchange.fundingRate > 0.015 ? 'Mildly Bullish' : 'Neutral/Bearish';
 
-  // ═══════════════════════════════════════════════════════════════════════
+  // 
   // RENDER
-  // ═══════════════════════════════════════════════════════════════════════
+  // 
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-4 md:p-6">
@@ -379,7 +358,7 @@ ${'='.repeat(60)}`;
             <TrendingUp className="w-8 h-8 text-orange-500" />
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-white">Bitcoin Price Prediction Model</h1>
-              <p className="text-sm text-gray-400">: 508 Capital LLC LLC</p>
+              <p className="text-sm text-gray-400">: 508 Capital LLC</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -756,9 +735,9 @@ ${'='.repeat(60)}`;
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 // SUB-COMPONENTS
-// ═══════════════════════════════════════════════════════════════════════════
+// ════
 
 function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
