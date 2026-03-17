@@ -358,6 +358,10 @@ function detectCrossovers(data: any[]): { type: string; signal: 'bullish' | 'bea
 // ════
 // MAIN COMPONENT
 // ════
+// Auto-refresh
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(60);
+  const [countdown, setCountdown] = useState(60);
 
 export default function BTCPredictionModel() {
   const [currentPrice, setCurrentPrice] = useState(70000);
@@ -472,6 +476,27 @@ export default function BTCPredictionModel() {
 
   useEffect(() => {
     fetchMacroData();
+    // ── AUTO-REFRESH TIMER ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    setCountdown(refreshInterval);
+
+    const countdownTimer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          // Trigger refreshes
+          fetchLivePrice();
+          fetchMarketData(90);
+          return refreshInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(countdownTimer);
+  }, [autoRefresh, refreshInterval]);
   }, []);
 
   // ── PROJECTION ENGINE (Monte Carlo / GBM) ──────────────────────────────
@@ -684,7 +709,41 @@ ${'='.repeat(60)}`;
 
         {/* HEADER */}
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Auto-refresh toggle */}
+            <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+              <button onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${autoRefresh ? 'bg-green-600' : 'bg-gray-600'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoRefresh ? 'translate-x-5' : ''}`} />
+              </button>
+              <span className="text-xs text-gray-400">Auto</span>
+              {autoRefresh && (
+                <span className="text-xs font-mono text-green-400">{countdown}s</span>
+              )}
+            </div>
+            {autoRefresh && (
+              <select value={refreshInterval} onChange={e => { setRefreshInterval(Number(e.target.value)); setCountdown(Number(e.target.value)); }}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-xs text-gray-300">
+                <option value={30}>30s</option>
+                <option value={60}>60s</option>
+                <option value={120}>2m</option>
+                <option value={300}>5m</option>
+              </select>
+            )}
+            <button onClick={fetchLivePrice} disabled={isLoadingPrice}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-colors">
+              {isLoadingPrice ? <RefreshCw className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4 text-green-400" />}
+              {livePrice ? `$${livePrice.toLocaleString()}` : 'Fetch Price'}
+            </button>
+            <button onClick={runAiAnalysis} disabled={isAnalyzing}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 disabled:opacity-60 transition-all shadow-md text-sm">
+              {isAnalyzing ? <><RefreshCw className="w-4 h-4 animate-spin" /> Analyzing...</> : <><Sparkles className="w-4 h-4" /> Run AI Analysis</>}
+            </button>
+            <button onClick={exportReport}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-colors">
+              <Download className="w-4 h-4" /> Export
+            </button>
+          </div>
             <TrendingUp className="w-8 h-8 text-orange-500" />
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-white">Bitcoin Price Prediction Model</h1>
@@ -1663,7 +1722,6 @@ ${'='.repeat(60)}`;
  </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
