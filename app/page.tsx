@@ -141,6 +141,220 @@ function SliderControl({ label, value, min, max, step, display, onChange }: {
     </div>
   );
 }
+function detectCrossovers(data: any[]): { type: string; signal: 'bullish' | 'bearish'; date: string; description: string; strength: 'strong' | 'moderate' | 'weak' }[] {
+  const alerts: { type: string; signal: 'bullish' | 'bearish'; date: string; description: string; strength: 'strong' | 'moderate' | 'weak' }[] = [];
+  if (data.length < 3) return alerts;
+
+  for (let i = 1; i < data.length; i++) {
+    const prev = data[i - 1];
+    const curr = data[i];
+    if (!prev || !curr) continue;
+
+    // Price crosses above SMA 50
+    if (prev.price && curr.price && prev.sma50 && curr.sma50) {
+      if (prev.price < prev.sma50 && curr.price > curr.sma50) {
+        alerts.push({
+          type: 'Price × SMA 50',
+          signal: 'bullish',
+          date: curr.date,
+          description: `Price crossed above SMA 50 ($${curr.sma50?.toLocaleString()}). Historically precedes rallies when confirmed by volume and whale accumulation.`,
+          strength: 'strong',
+        });
+      }
+      // Price crosses below SMA 50
+      if (prev.price > prev.sma50 && curr.price < curr.sma50) {
+        alerts.push({
+          type: 'Price × SMA 50',
+          signal: 'bearish',
+          date: curr.date,
+          description: `Price fell below SMA 50 ($${curr.sma50?.toLocaleString()}). Watch for SMA 50 to act as resistance on retest attempts.`,
+          strength: 'strong',
+        });
+      }
+    }
+
+    // Price crosses above SMA 20
+    if (prev.price && curr.price && prev.sma20 && curr.sma20) {
+      if (prev.price < prev.sma20 && curr.price > curr.sma20) {
+        alerts.push({
+          type: 'Price × SMA 20',
+          signal: 'bullish',
+          date: curr.date,
+          description: `Price reclaimed SMA 20 ($${curr.sma20?.toLocaleString()}). Short-term momentum shifting bullish.`,
+          strength: 'moderate',
+        });
+      }
+      if (prev.price > prev.sma20 && curr.price < curr.sma20) {
+        alerts.push({
+          type: 'Price × SMA 20',
+          signal: 'bearish',
+          date: curr.date,
+          description: `Price lost SMA 20 ($${curr.sma20?.toLocaleString()}). Short-term weakness.`,
+          strength: 'moderate',
+        });
+      }
+    }
+
+    // SMA 50 crosses SMA 20 (medium-term trend shift)
+    if (prev.sma20 && curr.sma20 && prev.sma50 && curr.sma50) {
+      if (prev.sma20 < prev.sma50 && curr.sma20 > curr.sma50) {
+        alerts.push({
+          type: 'SMA 20 × SMA 50',
+          signal: 'bullish',
+          date: curr.date,
+          description: 'SMA 20 crossed above SMA 50 — bullish medium-term momentum shift. Often precedes sustained moves higher.',
+          strength: 'strong',
+        });
+      }
+      if (prev.sma20 > prev.sma50 && curr.sma20 < curr.sma50) {
+        alerts.push({
+          type: 'SMA 20 × SMA 50',
+          signal: 'bearish',
+          date: curr.date,
+          description: 'SMA 20 crossed below SMA 50 — bearish medium-term momentum shift. Watch for further downside.',
+          strength: 'strong',
+        });
+      }
+    }
+
+    // RSI crosses above 30 (oversold recovery)
+    if (prev.rsi != null && curr.rsi != null) {
+      if (prev.rsi < 30 && curr.rsi >= 30) {
+        alerts.push({
+          type: 'RSI Recovery',
+          signal: 'bullish',
+          date: curr.date,
+          description: `RSI crossed above 30 (${curr.rsi.toFixed(1)}) — exiting oversold territory. Historically a buy signal when combined with volume.`,
+          strength: 'strong',
+        });
+      }
+      // RSI crosses below 70 (overbought exit)
+      if (prev.rsi > 70 && curr.rsi <= 70) {
+        alerts.push({
+          type: 'RSI Rejection',
+          signal: 'bearish',
+          date: curr.date,
+          description: `RSI fell below 70 (${curr.rsi.toFixed(1)}) — exiting overbought zone. Momentum fading, watch for correction.`,
+          strength: 'moderate',
+        });
+      }
+      // RSI crosses above 50 (momentum shift)
+      if (prev.rsi < 50 && curr.rsi >= 50) {
+        alerts.push({
+          type: 'RSI Momentum',
+          signal: 'bullish',
+          date: curr.date,
+          description: `RSI crossed above 50 (${curr.rsi.toFixed(1)}) — momentum shifting from bearish to bullish.`,
+          strength: 'moderate',
+        });
+      }
+      if (prev.rsi > 50 && curr.rsi <= 50) {
+        alerts.push({
+          type: 'RSI Momentum',
+          signal: 'bearish',
+          date: curr.date,
+          description: `RSI fell below 50 (${curr.rsi.toFixed(1)}) — momentum shifting from bullish to bearish.`,
+          strength: 'moderate',
+        });
+      }
+    }
+
+    // MACD crosses signal line
+    if (prev.macd != null && curr.macd != null && prev.signal != null && curr.signal != null) {
+      if (prev.macd < prev.signal && curr.macd > curr.signal) {
+        alerts.push({
+          type: 'MACD Crossover',
+          signal: 'bullish',
+          date: curr.date,
+          description: 'MACD crossed above signal line — bullish momentum confirmed. Strongest when occurring below zero line.',
+          strength: curr.macd < 0 ? 'strong' : 'moderate',
+        });
+      }
+      if (prev.macd > prev.signal && curr.macd < curr.signal) {
+        alerts.push({
+          type: 'MACD Crossover',
+          signal: 'bearish',
+          date: curr.date,
+          description: 'MACD crossed below signal line — bearish momentum confirmed. Strongest when occurring above zero line.',
+          strength: curr.macd > 0 ? 'strong' : 'moderate',
+        });
+      }
+    }
+
+    // MACD histogram flip
+    if (prev.histogram != null && curr.histogram != null) {
+      if (prev.histogram < 0 && curr.histogram > 0) {
+        alerts.push({
+          type: 'MACD Histogram',
+          signal: 'bullish',
+          date: curr.date,
+          description: 'MACD histogram turned positive — buying pressure exceeding selling pressure.',
+          strength: 'weak',
+        });
+      }
+      if (prev.histogram > 0 && curr.histogram < 0) {
+        alerts.push({
+          type: 'MACD Histogram',
+          signal: 'bearish',
+          date: curr.date,
+          description: 'MACD histogram turned negative — selling pressure exceeding buying pressure.',
+          strength: 'weak',
+        });
+      }
+    }
+
+    // Bollinger Band touches
+    if (curr.price && curr.bbUpper && curr.bbLower) {
+      if (curr.price >= curr.bbUpper * 0.99) {
+        alerts.push({
+          type: 'BB Upper Touch',
+          signal: 'bearish',
+          date: curr.date,
+          description: `Price touching upper Bollinger Band ($${curr.bbUpper?.toLocaleString()}) — potential overbought, watch for mean reversion.`,
+          strength: 'weak',
+        });
+      }
+      if (curr.price <= curr.bbLower * 1.01) {
+        alerts.push({
+          type: 'BB Lower Touch',
+          signal: 'bullish',
+          date: curr.date,
+          description: `Price touching lower Bollinger Band ($${curr.bbLower?.toLocaleString()}) — potential oversold, watch for bounce.`,
+          strength: 'weak',
+        });
+      }
+    }
+
+    // Ichimoku cloud breakout
+    if (curr.price && curr.senkouA && curr.senkouB && prev.price && prev.senkouA && prev.senkouB) {
+      const currAboveCloud = curr.price > Math.max(curr.senkouA, curr.senkouB);
+      const prevAboveCloud = prev.price > Math.max(prev.senkouA, prev.senkouB);
+      const currBelowCloud = curr.price < Math.min(curr.senkouA, curr.senkouB);
+      const prevBelowCloud = prev.price < Math.min(prev.senkouA, prev.senkouB);
+
+      if (currAboveCloud && !prevAboveCloud) {
+        alerts.push({
+          type: 'Ichimoku Breakout',
+          signal: 'bullish',
+          date: curr.date,
+          description: 'Price broke above Ichimoku cloud — strong bullish signal. Cloud now acts as support.',
+          strength: 'strong',
+        });
+      }
+      if (currBelowCloud && !prevBelowCloud) {
+        alerts.push({
+          type: 'Ichimoku Breakdown',
+          signal: 'bearish',
+          date: curr.date,
+          description: 'Price fell below Ichimoku cloud — strong bearish signal. Cloud now acts as resistance.',
+          strength: 'strong',
+        });
+      }
+    }
+  }
+
+  return alerts.reverse(); // Most recent first
+}
 // ════
 // MAIN COMPONENT
 // ════
@@ -670,6 +884,9 @@ ${'='.repeat(60)}`;
         )}
 
   {/* TAB: TECHNICALS */}
+  <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Technical Indicators {liveData ? '(Live)' : '(Static)'}</h2>
         {activeTab === 'technicals' && (
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-5">
             <div className="flex items-center justify-between">
@@ -700,6 +917,44 @@ ${'='.repeat(60)}`;
                 <SignalCard label="BB Lower" value={`$${liveData.bbLower?.toLocaleString()}`} />
               </div>
             )}
+            {/* Crossover Alerts */}
+            {liveTechnicals.length > 0 && (() => {
+              const crossovers = detectCrossovers(liveTechnicals);
+              return crossovers.length > 0 ? (
+                <div className="bg-gray-800 rounded-lg p-4 space-y-3">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
+                    </span>
+                    Signal Alerts ({crossovers.length} detected in last 90 days)
+                  </h3>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {crossovers.map((alert, i) => (
+                      <div key={i} className={`rounded-lg p-3 border ${
+                        alert.signal === 'bullish' ? 'bg-green-900/20 border-green-800/50' : 'bg-red-900/20 border-red-800/50'
+                      }`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                              alert.signal === 'bullish' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'
+                            }`}>{alert.signal.toUpperCase()}</span>
+                            <span className="text-sm font-medium text-gray-200">{alert.type}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              alert.strength === 'strong' ? 'bg-orange-900/50 text-orange-400' :
+                              alert.strength === 'moderate' ? 'bg-yellow-900/50 text-yellow-400' :
+                              'bg-gray-700 text-gray-400'
+                            }`}>{alert.strength}</span>
+                          </div>
+                          <span className="text-xs text-gray-500">{alert.date}</span>
+                        </div>
+                        <p className="text-xs text-gray-400">{alert.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
             {/* RSI + MACD Chart */}
             <ResponsiveContainer width="100%" height={350}>
               <ComposedChart data={liveTechnicals.length > 0 ? liveTechnicals : TECHNICAL_DATA}>
@@ -1405,7 +1660,10 @@ ${'='.repeat(60)}`;
         <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-4 text-xs text-yellow-300/70">
           <strong>Disclaimer:</strong> This model uses geometric Brownian motion with Monte Carlo simulation.
           For educational and analytical purposes only. Not investment advice.
+ </div>
         </div>
       </div>
     </div>
-  )}
+    </div>
+  );
+}
